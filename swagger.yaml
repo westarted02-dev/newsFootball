@@ -1,0 +1,289 @@
+openapi: 3.0.3
+info:
+  title: BlitzScore News API
+  description: |
+    Futbol haberlerini RSS feed'lerinden periyodik olarak çekip veritabanına kaydeden
+    ve frontend'e sunan mikroservis.
+
+    **Polling:** RSS kaynakları her 15 dakikada bir otomatik senkronize edilir.
+    **Kaynaklar:** Sky Sports, BBC Sport Football
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local Development
+
+tags:
+  - name: NewsAPI
+    description: Dış NewsAPI.org kaynağından anlık haber çekme
+  - name: Repository
+    description: Veritabanındaki haberleri okuma (RSS polling ile doldurulan)
+
+paths:
+
+  # ─── NewsAPI (Dış Kaynak) ───────────────────────────────────────────────────
+
+  /newsApi/lastHour:
+    get:
+      tags: [NewsAPI]
+      summary: Son 1 saatin futbol haberlerini NewsAPI.org'dan çek
+      description: |
+        NewsAPI.org'a istek atarak son 1 saatte yayınlanan futbol haberlerini döner.
+        Her çağrıda dışarıya istek atılır, kota tüketir. Polling sistemi kurulduktan
+        sonra bu endpoint yerine `/news/repo/all` tercih edilmelidir.
+      operationId: getFootballNewsLastHour
+      responses:
+        "200":
+          description: Haber listesi başarıyla döndü
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ArticleNewsApi"
+              example:
+                - title: "Manchester City sign new striker"
+                  author: "John Doe"
+                  description: "City complete a £80m deal..."
+                  url: "https://newsapi.org/article/123"
+                  urlToImage: "https://cdn.example.com/img.jpg"
+                  publishedAt: "2026-06-29T14:30:00"
+                  content: "Full article content here..."
+                  source:
+                    id: "bbc-sport"
+                    name: "BBC Sport"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ─── Repository (DB) ────────────────────────────────────────────────────────
+
+  /news/repo/all:
+    get:
+      tags: [Repository]
+      summary: Veritabanındaki tüm haberleri getir
+      description: |
+        RSS polling ile veritabanına kaydedilmiş tüm Article kayıtlarını döner.
+        Dışarıya istek atmaz, kota tüketmez.
+      operationId: getAllArticles
+      responses:
+        "200":
+          description: Tüm haberler
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Article"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /news/repo/allById:
+    get:
+      tags: [Repository]
+      summary: Takip edilen takım/oyuncu/lig'e göre haberleri getir (sayfalı)
+      description: |
+        Kullanıcının takip ettiği takım, oyuncu ve lig ID'lerine göre ilişkili
+        haberleri sayfalı olarak döner. Şu an mock ID'lerle çalışmaktadır,
+        gerçek kullanıcı takip sistemi entegre edildiğinde güncellenecektir.
+
+        **Mock takip listesi:**
+        - Takımlar: 645 (Fenerbahçe), 40 (Liverpool)
+        - Oyuncular: 874 (Icardi), 306 (Salah)
+        - Ligler: 203 (Süper Lig), 39 (Premier Lig)
+      operationId: getFollowedNews
+      responses:
+        "200":
+          description: Sayfalı haber sonuçları
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageArticle"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /news/repo/adds:
+    get:
+      tags: [Repository]
+      summary: NewsAPI haberlerini DB'ye ekle (manuel tetik)
+      description: |
+        NewsAPI.org'dan son 1 saatin haberlerini çekip veritabanına kaydeder.
+        Şu an devre dışı (repo.addArticle yorum satırında). RSS polling sistemi
+        devreye girdiğinde bu endpoint kullanılmayacaktır.
+      operationId: addArticlesToRepo
+      deprecated: true
+      responses:
+        "200":
+          description: İşlem tamamlandı (response body yok)
+
+# ─── Components ───────────────────────────────────────────────────────────────
+
+components:
+
+  schemas:
+
+    Article:
+      type: object
+      description: Veritabanındaki haber kaydı (RSS veya NewsAPI kaynaklı)
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        title:
+          type: string
+          example: "Galatasaray transfer bombası patlattı"
+        body:
+          type: string
+          example: "Galatasaray, dünyaca ünlü yıldızı kadrosuna kattı..."
+        summary:
+          type: string
+          example: "Kısa özet metni"
+        category:
+          type: string
+          example: "Transfer"
+        source:
+          type: string
+          example: "Sky Sports"
+        sourceUrl:
+          type: string
+          format: uri
+          example: "https://www.skysports.com/football/news/12040/13456789"
+        author:
+          type: string
+          example: "Jane Smith"
+        publishedAt:
+          type: string
+          format: date-time
+          example: "2026-06-29T10:15:00"
+        imageUrl:
+          type: string
+          format: uri
+          example: "https://e0.365dm.com/img/article.jpg"
+        emoji:
+          type: string
+          example: "⚽"
+        language:
+          type: string
+          example: "en"
+        references:
+          type: array
+          items:
+            $ref: "#/components/schemas/NewsReference"
+
+    NewsReference:
+      type: object
+      description: Haberin ilişkili olduğu takım/oyuncu/lig referansı
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [PLAYER, TEAM, LEAGUE]
+          example: "TEAM"
+        playerId:
+          type: integer
+          nullable: true
+          example: null
+        teamId:
+          type: integer
+          nullable: true
+          example: 645
+        leagueId:
+          type: integer
+          nullable: true
+          example: null
+
+    ArticleNewsApi:
+      type: object
+      description: NewsAPI.org'dan gelen ham haber nesnesi
+      properties:
+        source:
+          $ref: "#/components/schemas/SourceArticle"
+        author:
+          type: string
+          nullable: true
+          example: "BBC Sport"
+        title:
+          type: string
+          example: "Liverpool win Premier League title"
+        description:
+          type: string
+          example: "Liverpool clinched the title with a 3-0 win..."
+        url:
+          type: string
+          format: uri
+          example: "https://www.bbc.co.uk/sport/football/123456"
+        urlToImage:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://ichef.bbci.co.uk/news/1024/branded_sport/img.jpg"
+        publishedAt:
+          type: string
+          format: date-time
+          example: "2026-06-29T13:45:00"
+        content:
+          type: string
+          nullable: true
+          example: "Full article text truncated at 200 chars..."
+
+    SourceArticle:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+          example: "bbc-sport"
+        name:
+          type: string
+          example: "BBC Sport"
+
+    PageArticle:
+      type: object
+      description: Spring Data sayfalı sonuç wrapper'ı
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/Article"
+        totalElements:
+          type: integer
+          example: 42
+        totalPages:
+          type: integer
+          example: 5
+        size:
+          type: integer
+          example: 10
+        number:
+          type: integer
+          description: Mevcut sayfa numarası (0'dan başlar)
+          example: 0
+        first:
+          type: boolean
+          example: true
+        last:
+          type: boolean
+          example: false
+
+  responses:
+    InternalError:
+      description: Sunucu hatası
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+              status:
+                type: integer
+                example: 500
+              error:
+                type: string
+                example: "Internal Server Error"
+              path:
+                type: string
+                example: "/news/repo/all"
