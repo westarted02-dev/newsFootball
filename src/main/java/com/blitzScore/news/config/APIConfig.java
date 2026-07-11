@@ -10,7 +10,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 @Configuration
 public class APIConfig {
 
-	@Bean("guardian")
+	@Bean("guardianWebClient")
 	public WebClient guardianWebClient() {
 		return WebClient.builder()
 				.baseUrl("https://content.guardianapis.com")

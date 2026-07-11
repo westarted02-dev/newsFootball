@@ -19,7 +19,7 @@ public class BaseApiService {
 	private final WebClient webClient;
 
     @Autowired
-    public BaseApiService(@Qualifier("guardian") WebClient webClient) {
+    public BaseApiService(@Qualifier("guardianWebClient") WebClient webClient) {
         this.webClient = webClient;
     }
     
